@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Verify danmaku settings landed in admin_config and the upstream answers."""
+"""Verify danmaku config + live pipeline, tolerating cold-isolate warm-up.
+
+danmu_api keeps animes/episodeIds in per-isolate memory. A freshly routed
+request can 404 on /bangumi or /comment until that isolate has seen a search.
+Retry the whole chain a few times before declaring failure.
+"""
 import json
-import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,12 +31,10 @@ print(f"\nconfig looks right: {'YES' if ok else 'NO'}")
 if not ok:
     sys.exit(1)
 
-# Reproduce getDanmakuApiBaseUrl()
 eff = base if tok == "87654321" else f"{base}/{tok}"
-print("effective base:", eff)
-
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"}
+KW = "庆余年"
 
 
 def call(path, xml=False):
@@ -50,28 +53,36 @@ def call(path, xml=False):
         return 0, f"{type(e).__name__}: {e}"
 
 
-print("\n=== live check via the EXACT url MoonTVPlus will build ===")
-kw = "庆余年"
-st, d = call("/api/v2/search/anime?keyword=" + urllib.parse.quote(kw))
-print("  search  HTTP", st)
-animes = d.get("animes") or [] if st == 200 else []
-print("  animes:", len(animes))
-if not animes:
-    print("  ", str(d)[:200]); sys.exit(1)
+print("\n=== live pipeline (retry to survive cold isolates) ===")
+final = None
+for attempt in range(1, 6):
+    st1, d1 = call("/api/v2/search/anime?keyword=" + urllib.parse.quote(KW))
+    animes = d1.get("animes") or [] if st1 == 200 else []
+    if not animes:
+        print(f"  [{attempt}] search HTTP {st1} -> no animes, retrying")
+        time.sleep(2)
+        continue
+    aid = animes[0]["animeId"]
 
-aid = animes[0]["animeId"]
-st, d = call(f"/api/v2/bangumi/{aid}")
-eps = (d.get("bangumi") or {}).get("episodes") or [] if st == 200 else []
-print("  bangumi HTTP", st, "| episodes:", len(eps))
-if not eps:
-    sys.exit(1)
+    st2, d2 = call(f"/api/v2/bangumi/{aid}")
+    eps = (d2.get("bangumi") or {}).get("episodes") or [] if st2 == 200 else []
+    if not eps:
+        print(f"  [{attempt}] search ok({len(animes)}) | bangumi HTTP {st2} -> 0 eps, retrying")
+        time.sleep(2)
+        continue
 
-eid = eps[0]["episodeId"]
-print("  comment attempts (cold-isolate warm-up expected):")
-for i in range(4):
-    st, r = call(f"/api/v2/comment/{eid}?format=xml", xml=True)
-    n = len(re.findall(r"<d p=", r)) if isinstance(r, str) else -1
-    print(f"    try{i+1}: HTTP {st} | <d>={n}")
-    if st == 200 and n > 0:
-        print(f"\n>>> SUCCESS - {n} danmaku returned")
+    eid = eps[0]["episodeId"]
+    st3, xml = call(f"/api/v2/comment/{eid}?format=xml", xml=True)
+    n = len(re.findall(r"<d p=", xml)) if isinstance(xml, str) else -1
+    print(f"  [{attempt}] search ok({len(animes)}) | bangumi ok({len(eps)} eps) | "
+          f"comment HTTP {st3} <d>={n}")
+    if st3 == 200 and n > 0:
+        final = n
         break
+    time.sleep(2)
+
+if final:
+    print(f"\n>>> SUCCESS - danmaku pipeline live, {final} comments on ep1")
+else:
+    print("\n>>> pipeline did not return danmaku in 5 attempts")
+    sys.exit(1)
