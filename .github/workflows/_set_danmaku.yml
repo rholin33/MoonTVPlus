@@ -35,6 +35,12 @@ jobs:
           python3 _ghcfg/set_danmaku.py
           wrangler d1 execute moontvplus --remote --file=/tmp/update_dm.sql
 
+      - name: Site end-to-end danmaku
+        env:
+          U: ${{ secrets.USERNAME }}
+          P: ${{ secrets.PASSWORD }}
+        run: python3 _ghcfg/site_danmaku.py || true
+
       - name: Verify
         run: |
           wrangler d1 execute moontvplus --remote --json \
