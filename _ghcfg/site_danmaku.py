@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Verify danmaku works through the site after enabling global_fetch_strictly_public."""
+"""Verify danmaku end-to-end through the site (fixed response parsing).
+
+The episodes route passes the upstream payload through unchanged, so the list
+lives at data["bangumi"]["episodes"], not data["episodes"].
+"""
 import http.cookiejar
 import json
 import os
@@ -45,39 +49,47 @@ def site(path, timeout=120):
         return 0, f"{type(e).__name__}: {e}"
 
 
+def episodes_of(d):
+    """Handle both shapes: {bangumi:{episodes:[...]}} and {episodes:[...]}."""
+    if not isinstance(d, dict):
+        return []
+    b = d.get("bangumi")
+    if isinstance(b, dict) and b.get("episodes"):
+        return b["episodes"]
+    return d.get("episodes") or []
+
+
 print("\n=== 1. /api/danmaku/search ===")
 animes = []
 for i in range(1, 9):
     st, d = site("/api/danmaku/search?keyword=" + urllib.parse.quote(KW))
-    n = len(d.get("animes") or []) if isinstance(d, dict) else -1
-    print(f"  try{i}: HTTP {st} animes={n}" + ("" if n > 0 else f"  {str(d)[:120]}"))
-    if n > 0:
-        animes = d["animes"]
+    animes = d.get("animes") or [] if isinstance(d, dict) else []
+    print(f"  try{i}: HTTP {st} animes={len(animes)}")
+    if animes:
         break
     time.sleep(5)
 
 if not animes:
-    print("\n>>> search FAILED")
+    print(">>> search FAILED")
     sys.exit(1)
-
 aid = animes[0]["animeId"]
 print(f"  picked animeId={aid} {animes[0].get('animeTitle')}")
 
 print("\n=== 2. /api/danmaku/episodes ===")
 eps = []
-for i in range(1, 7):
+for i in range(1, 9):
     st, d = site(f"/api/danmaku/episodes?animeId={aid}")
-    eps = d.get("episodes") or [] if isinstance(d, dict) else []
-    print(f"  try{i}: HTTP {st} episodes={len(eps)}")
+    eps = episodes_of(d)
+    print(f"  try{i}: HTTP {st} episodes={len(eps)}"
+          + ("" if eps else f"  keys={list(d.keys())[:6] if isinstance(d,dict) else d}"))
     if eps:
         break
     time.sleep(4)
 
 if not eps:
-    print("\n>>> episodes FAILED")
+    print(">>> episodes FAILED")
     sys.exit(1)
-
-eid = eps[0]["episodeId"]
+eid = eps[0].get("episodeId")
 print(f"  picked episodeId={eid} {eps[0].get('episodeTitle')}")
 
 print("\n=== 3. /api/danmaku/comment ===")
