@@ -16,3 +16,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Deploy danmu_api to Cloudflare Workers
         run: bash _ghcfg/deploy_danmu.sh
+      - name: End-to-end danmaku verification
+        run: python3 _ghcfg/verify_danmu.py
