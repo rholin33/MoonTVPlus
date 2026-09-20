@@ -9,15 +9,19 @@ jobs:
   q:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Install Wrangler
         run: npm i -g wrangler@4.60.0
+      - name: Patch D1 id
+        run: sed -i "s/REPLACE_WITH_YOUR_D1_DATABASE_ID/${{ secrets.D1_DATABASE_ID }}/g" wrangler.toml
+      - name: List D1 databases
+        run: wrangler d1 list || true
       - name: Query admin_config
         run: |
-          echo "=== row count / size ==="
+          echo "=== admin_config rows ==="
           wrangler d1 execute moontvplus --remote --command "SELECT id, length(config) AS len, datetime(updated_at,'unixepoch') AS updated FROM admin_config;" || true
-          echo "=== does config contain api_site? ==="
-          wrangler d1 execute moontvplus --remote --json --command "SELECT config FROM admin_config;" > /tmp/c.json || true
-          head -c 2000 /tmp/c.json
+          echo "=== config content ==="
+          wrangler d1 execute moontvplus --remote --json --command "SELECT config FROM admin_config;" || true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
