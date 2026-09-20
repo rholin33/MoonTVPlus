@@ -9,9 +9,12 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     env:
+      BASE: https://moontv-plus.tarysoli33.workers.dev
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       SUBURL: ${{ secrets.CONFIG_SUBSCRIPTION_URL }}
+      U: ${{ secrets.USERNAME }}
+      P: ${{ secrets.PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,3 +44,9 @@ jobs:
             --command "SELECT config FROM admin_config WHERE id=1;" > /tmp/c2.json
           echo "--- AFTER ---"
           python3 _ghcfg/verify_cfg.py /tmp/c2.json
+
+      - name: Probe live site
+        run: python3 _ghcfg/probe_site.py || true
+
+      - name: Clear server-side config cache
+        run: python3 _ghcfg/reload_cache.py || true
