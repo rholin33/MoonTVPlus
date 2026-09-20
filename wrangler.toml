@@ -1,6 +1,9 @@
 name = "moontv-plus"
 compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
+# global_fetch_strictly_public: required so this Worker can fetch another
+# Worker on the same zone (danmu-api.tarysoli33.workers.dev). Without it,
+# such requests are routed to the zone origin and return 404 (CF error 1042).
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 main = ".open-next/worker.js"
 minify = true
 
