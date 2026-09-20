@@ -1,0 +1,18 @@
+name: _site_danmaku
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://moontv-plus.tarysoli33.workers.dev
+      U: ${{ secrets.USERNAME }}
+      P: ${{ secrets.PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Site danmaku end-to-end
+        run: python3 _ghcfg/site_danmaku.py
