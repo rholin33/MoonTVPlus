@@ -48,5 +48,8 @@ jobs:
       - name: Probe live site
         run: python3 _ghcfg/probe_site.py || true
 
+      - name: End-to-end search probe
+        run: python3 _ghcfg/search_probe.py || true
+
       - name: Clear server-side config cache
         run: python3 _ghcfg/reload_cache.py || true
