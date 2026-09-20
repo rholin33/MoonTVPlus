@@ -13,6 +13,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       DM_BASE: ${{ secrets.DANMAKU_API_BASE }}
       DM_TOKEN: ${{ secrets.DANMAKU_API_TOKEN }}
+      BASE: https://moontv-plus.tarysoli33.workers.dev
+      U: ${{ secrets.USERNAME }}
+      P: ${{ secrets.PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +25,7 @@ jobs:
       - name: Patch D1 database id
         run: sed -i "s/REPLACE_WITH_YOUR_D1_DATABASE_ID/${{ secrets.D1_DATABASE_ID }}/g" wrangler.toml
 
-      - name: Snapshot admin_config
+      - name: Snapshot admin_config (before)
         run: |
           wrangler d1 execute moontvplus --remote --json \
             --command "SELECT config FROM admin_config WHERE id=1;" > /tmp/c.json
@@ -35,15 +38,12 @@ jobs:
           python3 _ghcfg/set_danmaku.py
           wrangler d1 execute moontvplus --remote --file=/tmp/update_dm.sql
 
-      - name: Site end-to-end danmaku
-        env:
-          U: ${{ secrets.USERNAME }}
-          P: ${{ secrets.PASSWORD }}
-        run: python3 _ghcfg/site_danmaku.py || true
-
-      - name: Verify
+      - name: Dump after + upstream verify
         run: |
           wrangler d1 execute moontvplus --remote --json \
             --command "SELECT config FROM admin_config WHERE id=1;" > /tmp/c.json
           echo "--- AFTER ---"
           python3 _ghcfg/verify_danmaku.py
+
+      - name: Site end-to-end danmaku
+        run: python3 _ghcfg/site_danmaku.py || true
