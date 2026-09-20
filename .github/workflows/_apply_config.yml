@@ -1,0 +1,76 @@
+name: _apply_config
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://moontv-plus.tarysoli33.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wrangler
+        run: npm i -g wrangler@4.60.0 >/dev/null 2>&1
+
+      - name: Patch D1 id
+        run: sed -i "s/REPLACE_WITH_YOUR_D1_DATABASE_ID/${{ secrets.D1_DATABASE_ID }}/g" wrangler.toml
+
+      - name: Site reachability
+        run: curl -s -o /dev/null -w "site HTTP %{http_code}\n" --max-time 25 "$BASE/" || echo "site unreachable"
+
+      - name: Snapshot admin_config before
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          wrangler d1 execute moontvplus --remote --json \
+            --command "SELECT config FROM admin_config WHERE id=1;" > /tmp/c.json
+          echo "--- before ---"
+          python3 _ghcfg/verify_cfg.py /tmp/c.json
+
+      - name: Attempt app-native reset
+        env:
+          U: ${{ secrets.USERNAME }}
+          P: ${{ secrets.PASSWORD }}
+        run: |
+          set +e
+          python3 _ghcfg/login_reset.py
+
+      - name: Snapshot admin_config after reset
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          rm -f /tmp/need_fallback
+          wrangler d1 execute moontvplus --remote --json \
+            --command "SELECT config FROM admin_config WHERE id=1;" > /tmp/c.json
+          echo "--- after reset ---"
+          python3 _ghcfg/verify_cfg.py /tmp/c.json
+
+      - name: Fallback direct D1 write
+        if: hashFiles('/tmp/need_fallback') != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SUBURL: ${{ secrets.CONFIG_SUBSCRIPTION_URL }}
+        run: |
+          set -e
+          echo ">>> reset did not populate sources; writing D1 directly"
+          curl -sL --max-time 30 "$SUBURL" -o /tmp/enc.b58
+          python3 _ghcfg/build_update.py
+          wrangler d1 execute moontvplus --remote --file=/tmp/update.sql
+          echo "--- re-verify ---"
+          wrangler d1 execute moontvplus --remote --json \
+            --command "SELECT config FROM admin_config WHERE id=1;" > /tmp/c2.json
+          python3 _ghcfg/verify_cfg.py /tmp/c2.json
+
+      - name: Clear server config cache
+        run: |
+          set +e
+          python3 _ghcfg/login_reset.py reload
